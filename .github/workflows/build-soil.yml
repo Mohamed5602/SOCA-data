@@ -1,0 +1,40 @@
+name: Publish HYSOGs250m (cloud-optimised)
+on: workflow_dispatch
+permissions:
+  contents: write
+jobs:
+  soil:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with: { python-version: '3.12' }
+      - name: Download HYSOGs250m from NASA ORNL DAAC (Earthdata login from the repository secrets)
+        env:
+          EU: ${{ secrets.EARTHDATA_USER }}
+          EP: ${{ secrets.EARTHDATA_PASS }}
+        run: |
+          printf 'machine urs.earthdata.nasa.gov login %s password %s\n' "$EU" "$EP" > ~/.netrc; chmod 600 ~/.netrc
+          curl -fL -n -c cookies.txt -b cookies.txt -o HYSOGs250m.tif \
+            https://data.ornldaac.earthdata.nasa.gov/protected/global_soil/Global_Hydrologic_Soil_Group/data/HYSOGs250m.tif
+          rm -f ~/.netrc cookies.txt
+          ls -l HYSOGs250m.tif
+      - name: Convert to a cloud-optimised GeoTIFF
+        run: |
+          pip install -q rasterio
+          python - <<'PY'
+          import rasterio, rasterio.shutil
+          with rasterio.open('HYSOGs250m.tif') as s: print(s.profile)
+          rasterio.shutil.copy('HYSOGs250m.tif', 'HYSOGs250m_cog.tif', driver='COG', COMPRESS='DEFLATE', LEVEL=9, BLOCKSIZE=512,
+                               OVERVIEWS='AUTO', RESAMPLING='NEAREST', NUM_THREADS='ALL_CPUS', BIGTIFF='IF_SAFER')
+          with rasterio.open('HYSOGs250m_cog.tif') as d: print(d.profile, d.overviews(1))
+          PY
+          ls -l HYSOGs250m_cog.tif
+      - name: Publish as the release "hysogs250m"
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release delete hysogs250m -y --cleanup-tag 2>/dev/null || true
+          gh release create hysogs250m HYSOGs250m_cog.tif --title "HYSOGs250m – cloud-optimised copy for SOCA" \
+            --notes "Global Hydrologic Soil Groups (HYSOGs250m), Ross et al. 2018, ORNL DAAC, doi:10.3334/ORNLDAAC/1566 (U.S. government work). Converted to a cloud-optimised GeoTIFF (values unchanged) so SOCA can read only the area of each project."
