@@ -15,10 +15,18 @@ jobs:
           EU: ${{ secrets.EARTHDATA_USER }}
           EP: ${{ secrets.EARTHDATA_PASS }}
         run: |
-          printf 'machine urs.earthdata.nasa.gov login %s password %s\n' "$EU" "$EP" > ~/.netrc; chmod 600 ~/.netrc
-          curl -fL -n -c cookies.txt -b cookies.txt -o HYSOGs250m.tif \
+          [ -n "$EU" ] || { echo "::error::secret EARTHDATA_USER is empty or missing"; exit 1; }
+          [ -n "$EP" ] || { echo "::error::secret EARTHDATA_PASS is empty or missing"; exit 1; }
+          echo "user length ${#EU}, password length ${#EP}"
+          # Earthdata bearer token (the same sign-in SOCA uses), then the file
+          TOK=$(curl -s -X POST -u "$EU:$EP" https://urs.earthdata.nasa.gov/api/users/find_or_create_token | python -c "import sys,json; d=json.load(sys.stdin); print(d.get('access_token',''))" || true)
+          if [ -z "$TOK" ]; then
+            echo "::error::Earthdata sign-in failed – check the secrets (username / password) and that the account is activated."
+            curl -s -o /dev/null -w "token endpoint HTTP %{http_code}\n" -X POST -u "$EU:$EP" https://urs.earthdata.nasa.gov/api/users/find_or_create_token
+            exit 1
+          fi
+          curl -fL -H "Authorization: Bearer $TOK" -o HYSOGs250m.tif \
             https://data.ornldaac.earthdata.nasa.gov/protected/global_soil/Global_Hydrologic_Soil_Group/data/HYSOGs250m.tif
-          rm -f ~/.netrc cookies.txt
           ls -l HYSOGs250m.tif
       - name: Convert to a cloud-optimised GeoTIFF
         run: |
