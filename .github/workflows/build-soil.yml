@@ -15,9 +15,8 @@ jobs:
           EU: ${{ secrets.EARTHDATA_USER }}
           EP: ${{ secrets.EARTHDATA_PASS }}
         run: |
-          [ -n "$EU" ] || { echo "::error::secret EARTHDATA_USER is empty or missing"; exit 1; }
-          [ -n "$EP" ] || { echo "::error::secret EARTHDATA_PASS is empty or missing"; exit 1; }
-          echo "user length ${#EU}, password length ${#EP}"
+          echo "::notice::check 1 (user name secret) characters: ${#EU} · check 2 (password secret) characters: ${#EP}"
+          [ -n "$EU" ] && [ -n "$EP" ] || { echo "::error::a secret is empty or missing (see the character counts above)"; exit 1; }
           # Earthdata bearer token (the same sign-in SOCA uses), then the file
           TOK=$(curl -s -X POST -u "$EU:$EP" https://urs.earthdata.nasa.gov/api/users/find_or_create_token | python -c "import sys,json; d=json.load(sys.stdin); print(d.get('access_token',''))" || true)
           if [ -z "$TOK" ]; then
